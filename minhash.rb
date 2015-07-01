@@ -75,6 +75,7 @@ module Storage
       @redis = ::Redis.new
 
       sets.each do |set|
+        @redis.del "hmhll:hll:#{set}"
         @redis.del "hmhll:minhash:#{set}"
         @redis.hmset "hmhll:minhash:#{set}", *(0...@hashes.length).map { |i| [i, 2**64] }.flatten
       end
@@ -82,7 +83,10 @@ module Storage
 
     def add(data)
       hash_val = @hashes.map { |hash| hash.call(@data_count) }
-      @data_count += 1
+
+      data.each do |set, value|
+        @redis.pfadd "hmhll:hll:#{set}", @data_count if value == 1
+      end
 
       data.keys.each do |set|
         next unless data[set] == 1
@@ -91,6 +95,8 @@ module Storage
         end
         @redis.hmset "hmhll:minhash:#{set}", *min_hashes.flatten
       end
+
+      @data_count += 1
     end
 
     def similarity(s1, s2)
@@ -102,6 +108,10 @@ module Storage
       y = s1_vals.zip(s2_vals).inject(0) { |t, e| t += (e[0] == e[1] ? 1 : 0) }
       k = s1_vals.length
       return y.to_f / k
+    end
+
+    def est_union(s1, s2)
+      @redis.pfcount "hmhll:hll:#{s1}", "hmhll:hll:#{s2}"
     end
   end
 
@@ -140,21 +150,24 @@ def print(datum, store, s1, s2)
   inter = intersection(datum, s1, s2)
   union = union(datum, s1, s2)
   sim = inter.to_f / union.to_f
+
+  est_union = store.est_union(s1, s2)
   est_sim = store.similarity(s1, s2)
-  est_inter = est_sim * union
+  est_inter = est_sim * est_union
 
   puts "inter    : #{inter}"
   puts "union    : #{union}"
   puts "sim      : #{sim}"
-  puts "est sim  : #{est_sim}"
   puts "est inter: #{est_inter}"
+  puts "est union: #{est_union}"
+  puts "est sim  : #{est_sim}"
 
   puts "sim squared err rate   : #{((est_sim - sim) / sim) * 100}"
   puts "inter squared err rate : #{((est_inter - inter) / inter) * 100}"
   puts
 end
 
-store = Storage::Estimote.new([:s1, :s2, :s3, :s4])
+store = Storage::Estimote.new([:s1, :s2, :s3, :s4], 5000)
 
 datum.each do |data|
   store.add(data)
