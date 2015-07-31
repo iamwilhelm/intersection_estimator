@@ -32,3 +32,10 @@ I haven't characterized the statistical distribution of the errors, and
 I don't know what happens when you multiply these distributions of errors together.
 Would they grow unbounded? Or is there is bounded? If you know or know how to
 figure it out, lemme know in an issue or PR.
+
+# Running it
+
+Just `bundle install` and the gemfile will install what you need. Then just run
+`ruby ./minhash.rb`
+
+You'll need a redis running to calculate hyperloglog.
